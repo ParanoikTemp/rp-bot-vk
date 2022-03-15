@@ -44,8 +44,13 @@ def edit_message(message_id, messag, sender, keyboard=None, attachment=None):  #
 with open('datas/peers.txt') as f:
     peers = list(map(lambda x: int(x.replace('\n', '')), f.readlines()))  # подгружаем список бесед
 
-peers_commands = {}  # тут находятся команды по ключу беседы
-people_sex = {}  # эта штука чтобы по 100 раз пол не запрашивать. На самом деле проще позапрашивать, но раз есть то ок
+peers_commands = dict()  # тут находятся команды по ключу беседы
+people_sex = dict()
+# эта штука чтобы по 100 раз пол не запрашивать. На самом деле проще позапрашивать, но раз есть то ок
+with open('datas/marry.json', 'r') as f:
+    marrys_list = json.load(f)
+marrys_wait = dict()
+static_commands = ['!гайд', '!переменные', '!команды', '!свадьбы', '!развод', '!добавить']
 
 print('Бот запущен!')
 for event in longpoll.listen():
@@ -115,94 +120,188 @@ for event in longpoll.listen():
                 
 Пример команды:
 !добавить !крос @id<sender_id>(<sender_name>) очень красивый||красивая''', from_chat)
-
-        except Exception:
-            pass
-        if event.from_chat and test_message.startswith('!добавить') and len(
-                message) < 201:  # а тут мы добавляем команды
-            message = message.replace('\n',
-                                      '<br_>')
-            # так как я ленивая жопа, то вместо попыток сохранить символ тупо сделал свой
-            args = message.split()[1:]
-            command = args[0]
-            answer = args[1:]  # нарезочка
-            with open('peers_commands/' + str(from_chat) + '.json') as f:
-                cmds = json.load(f)
-                cmds[command] = answer
-                peers_commands[from_chat] = cmds
-            with open('peers_commands/' + str(from_chat) + '.json', 'w') as f:
-                json.dump(cmds, f)  # вносим команду: слово которое реагирует и ответ разделенный на пробелы.
-                # все это хранится в json файлах в папке peers_commands
-            send_message('Ваша команда успешно добавлена!', from_chat)
-        if event.from_chat and test_message.startswith('!удалить'):  # если кто то накосячил можно и удалить команду
-            args = message.split()[1:]
-            command = args[0]
-            try:
+            if test_message == '!свадьбы':
+                send_message('''Чтобы сделать предложение введите: !сделать предложение <человек>
+Чтобы отменить предложение введите: !отказаться от предложения <человек>
+Чтобы принять предложение введите: !принять предложение <человек>
+Чтобы развестить введите: !развод <человек>''', from_chat)
+            if event.from_chat and str(from_chat) not in marrys_list.keys():
+                marrys_list[str(from_chat)] = {}
+            if event.from_chat and from_chat not in marrys_wait.keys():
+                marrys_wait[from_chat] = {}
+            if test_message.startswith('!сделать предложение') and len(test_message.split()) == 3:
+                partner_id = cutid(test_message.split()[2])
+                if sender not in marrys_wait[from_chat].keys() and sender not in marrys_wait[
+                    from_chat].values() and partner_id != sender:
+                    if str(sender) not in marrys_list[str(from_chat)]:
+                        marrys_list[str(from_chat)][str(sender)] = list()
+                    if str(partner_id) not in marrys_list[str(from_chat)]:
+                        marrys_list[str(from_chat)][str(partner_id)] = list()
+                    if str(sender) in marrys_list[str(from_chat)][str(partner_id)]:
+                        send_message('Огорчу вас, но вы уже...', from_chat)
+                    else:
+                        marrys_wait[from_chat][sender] = partner_id
+                        name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                        name2 = vk.users.get(user_ids=(partner_id), fields=['first_name_dat'])[0]['first_name_dat']
+                        sex = vk.users.get(user_ids=(sender), fields=['sex'])[0]['sex']
+                        if sex == 1:
+                            send_message(
+                                f'@id{sender}({name1}) предлагает @id{partner_id}({name2}) взять ее в жены!\nЧтобы согласиться введите: "!принять предложение @id{sender} "\nЧтобы отказаться введите: "!отказаться от предложения @id{sender}"',
+                                from_chat)
+                        else:
+                            send_message(
+                                f'@id{sender}({name1}) предлагает @id{partner_id}({name2}) выйти за него замуж!\nЧтобы согласиться введите: "!принять предложение @id{sender} "\nЧтобы отказаться введите: "!отказаться от предложения @id{sender}"',
+                                from_chat)
+                    continue
+                elif sender in marrys_wait[from_chat].values():
+                    send_message('Этот человек уже сделал вам предложение.', from_chat)
+                elif partner_id == sender:
+                    send_message('Своей руке можно и не делать предложение.', from_chat)
+                else:
+                    send_message('Блин, ну куда ты спешишь емае...', from_chat)
+            if test_message.startswith('!отменить предложение'):
+                if sender in marrys_wait[from_chat].keys():
+                    del marrys_wait[from_chat][sender]
+                    send_message('Вы отменили ваше предложение руки и сердца', from_chat)
+            if test_message.startswith('!принять предложение') and len(test_message.split()) == 3:
+                partner_id = cutid(test_message.split()[2])
+                if marrys_wait[from_chat].get(partner_id) and marrys_wait[from_chat][partner_id] == sender:
+                    del marrys_wait[from_chat][partner_id]
+                    marrys_list[str(from_chat)][str(partner_id)].append(sender)
+                    marrys_list[str(from_chat)][str(sender)].append(partner_id)
+                    with open('datas/marry.json', 'w') as f:
+                        json.dump(marrys_list, f)
+                    name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                    name2 = vk.users.get(user_ids=(partner_id), fields=['first_name'])[0]['first_name']
+                    send_message(f'В этот день @id{partner_id}({name2}) и @id{sender}({name1}) '
+                                 f'заключили волшебный союз во имя Любви!\nПоздравим молодоженов!', from_chat)
+                else:
+                    send_message('К сожалению, ты никому не нужен...', from_chat)
+            if test_message.startswith('!отказаться от предложения') and len(test_message.split()) == 4:
+                partner_id = cutid(test_message.split()[3])
+                if marrys_wait[from_chat].get(partner_id) and marrys_wait[from_chat][partner_id] == sender:
+                    del marrys_wait[from_chat][partner_id]
+                    name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                    name2 = vk.users.get(user_ids=(partner_id), fields=['first_name'])[0]['first_name']
+                    send_message(f'Извини @id{partner_id}({name2}), но @id{sender}({name1}) '
+                                 f'отказался от твоего предложения.', from_chat)
+                else:
+                    send_message('К сожалению, ты никому не нужен...', from_chat)
+            if test_message.startswith('!развод') and len(test_message.split()) == 2:
+                partner_id = cutid(test_message.split()[1])
+                if marrys_list[str(from_chat)].get(str(sender)) and partner_id in marrys_list[str(from_chat)][str(sender)]:
+                    marrys_list[str(from_chat)][str(sender)].remove(partner_id)
+                    marrys_list[str(from_chat)][str(partner_id)].remove(sender)
+                    with open('datas/marry.json', 'w') as f:
+                        json.dump(marrys_list, f)
+                    name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                    name2 = vk.users.get(user_ids=(partner_id), fields=['first_name'])[0]['first_name']
+                    send_message(f'Печальные вести! @id{partner_id}({name2}) и @id{sender}({name1}) развелись! :C',
+                                 from_chat)
+                else:
+                    send_message('Вы не женаты на этом человеке', from_chat)
+            if event.from_chat and test_message.startswith('!браки'):
+                if str(sender) in marrys_list[str(from_chat)] and marrys_list[str(from_chat)][str(sender)]:
+                    message = f'@id{sender}(Ваши) партнеры:\n'
+                    for i in marrys_list[str(from_chat)][str(sender)]:
+                        name = vk.users.get(user_ids=(i), fields=['first_name'])[0]['first_name']
+                        message += f'@id{i}({name})\n'
+                    send_message(message, from_chat)
+                else:
+                    send_message(f'Сорян но @id{sender}(ты) никому не нужен.', from_chat)
+            if event.from_chat and test_message.startswith('!добавить') and len(
+                    message) < 201:  # а тут мы добавляем команды
+                message = message.replace('\n',
+                                          '<br_>')
+                # так как я ленивая жопа, то вместо попыток сохранить символ тупо сделал свой
+                args = message.split()[1:]
+                command = args[0]
+                answer = args[1:]  # нарезочка
                 with open('peers_commands/' + str(from_chat) + '.json') as f:
                     cmds = json.load(f)
-                    del cmds[command]
+                    if command in cmds.keys() or command in static_commands:
+                        send_message('Упс! Такая команда уже есть!', from_chat)
+                        continue
+                    cmds[command] = answer
                     peers_commands[from_chat] = cmds
                 with open('peers_commands/' + str(from_chat) + '.json', 'w') as f:
-                    json.dump(cmds, f)
-                send_message('Ваша команда успешно удалена!', from_chat)
-            except Exception:
-                send_message('Упс... Ошибочка вышла...', from_chat)
-        if event.from_chat:
-            if from_chat not in peers_commands.keys():  # подгружаем команды для этой беседы
-                with open('peers_commands/' + str(from_chat) + '.json') as f:
-                    cmds = json.load(f)
-                    peers_commands[from_chat] = cmds
-            else:
-                cmds = peers_commands[from_chat]
-            if cmds.get(message.split()[0]):
-                if event.message.get('reply_message'):
-                    # если это пересланое сообщение то автоматически подставляем автора
-                    name = vk.users.get(user_ids=(event.message.get('reply_message')['from_id']),
-                                        fields=['first_name'])[0]['first_name']
-                    message += ' @id' + str(event.message.get('reply_message')['from_id']) + '(' + \
-                               name + ')'
-                answer = cmds[message.split()[0]].copy()
-                for i, word in enumerate(answer):
-                    # чередование слов в зависимости от пола
-                    if '||' in word:
-                        if people_sex[sender] == 1:
-                            answer[i] = word.split('||')[1]
-                        elif people_sex[sender] == 0 or people_sex[sender] == 2:
-                            answer[i] = word.split('||')[0]
-                    if '&&' in word:
-                        # пресвятой рандом
-                        words = word.split('&&')
-                        if len(words) == 2 and words[0].isdigit() and words[1].isdigit():
-                            answer[i] = str(random.randint(int(words[0]), int(words[1])))
-                        else:
-                            answer[i] = random.choice(words)
-                    # тупо переменные
-                    if '<sender_id>' in word:
-                        answer[i] = answer[i].replace('<sender_id>', str(sender))
-                    if '<sender_name>' in word:
-                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0]['first_name']
-                        answer[i] = answer[i].replace('<sender_name>', name)
-                    if '<sender_last_name>' in word:
-                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0]['last_name']
-                        answer[i] = answer[i].replace('<sender_last_name>', name)
-                    if '<text_message>' in word:
-                        answer[i] = answer[i].replace('<text_message>', message.replace(message.split()[0] + ' ', ''))
-                    while '<word_' in word:
-                        # а это в каком то плане "аргументы"
-                        num = int(word.split('<word_')[1].split('>')[0])
-                        try:
-                            word = answer[i].replace(f'<word_{num}>', message.split()[num])
-                            answer[i] = answer[i].replace(f'<word_{num}>', message.split()[num])
-                        except Exception:
-                            word = answer[i].replace(f'<word_{num}>', '')
-                            answer[i] = answer[i].replace(f'<word_{num}>', '')
+                    json.dump(cmds, f)  # вносим команду: слово которое реагирует и ответ разделенный на пробелы.
+                    # все это хранится в json файлах в папке peers_commands
+                send_message('Ваша команда успешно добавлена!', from_chat)
+            if event.from_chat and test_message.startswith('!удалить'):  # если кто то накосячил можно и удалить команду
+                args = message.split()[1:]
+                command = args[0]
+                try:
+                    with open('peers_commands/' + str(from_chat) + '.json') as f:
+                        cmds = json.load(f)
+                        del cmds[command]
+                        peers_commands[from_chat] = cmds
+                    with open('peers_commands/' + str(from_chat) + '.json', 'w') as f:
+                        json.dump(cmds, f)
+                    send_message('Ваша команда успешно удалена!', from_chat)
+                except Exception:
+                    send_message('Упс... Ошибочка вышла...', from_chat)
+            if event.from_chat:
+                if from_chat not in peers_commands.keys():  # подгружаем команды для этой беседы
+                    with open('peers_commands/' + str(from_chat) + '.json') as f:
+                        cmds = json.load(f)
+                        peers_commands[from_chat] = cmds
                 else:
-                    answer = ' '.join(answer)
-                    # тут обрабатываются мои "спецсимволы"
-                    answer = answer.replace('<br_>', '\n').replace('<+>', ' ').replace(' <-> ', '').replace('<-> ',
-                                                                                                            '').replace(
-                        ' <->', '')
-                    if answer:
-                        send_message(answer, from_chat)
+                    cmds = peers_commands[from_chat]
+                if cmds.get(message.split()[0]):
+                    if event.message.get('reply_message'):
+                        # если это пересланое сообщение то автоматически подставляем автора
+                        name = vk.users.get(user_ids=(event.message.get('reply_message')['from_id']),
+                                            fields=['first_name'])[0]['first_name']
+                        message += ' @id' + str(event.message.get('reply_message')['from_id']) + '(' + \
+                                   name + ')'
+                    answer = cmds[message.split()[0]].copy()
+                    for i, word in enumerate(answer):
+                        # чередование слов в зависимости от пола
+                        if '||' in word:
+                            if people_sex[sender] == 1:
+                                answer[i] = word.split('||')[1]
+                            elif people_sex[sender] == 0 or people_sex[sender] == 2:
+                                answer[i] = word.split('||')[0]
+                        if '&&' in word:
+                            # пресвятой рандом
+                            words = word.split('&&')
+                            if len(words) == 2 and words[0].isdigit() and words[1].isdigit():
+                                answer[i] = str(random.randint(int(words[0]), int(words[1])))
+                            else:
+                                answer[i] = random.choice(words)
+                        # тупо переменные
+                        if '<sender_id>' in word:
+                            answer[i] = answer[i].replace('<sender_id>', str(sender))
+                        if '<sender_name>' in word:
+                            name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                                'first_name']
+                            answer[i] = answer[i].replace('<sender_name>', name)
+                        if '<sender_last_name>' in word:
+                            name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                                'last_name']
+                            answer[i] = answer[i].replace('<sender_last_name>', name)
+                        if '<text_message>' in word:
+                            answer[i] = answer[i].replace('<text_message>',
+                                                          message.replace(message.split()[0] + ' ', ''))
+                        while '<word_' in word:
+                            # а это в каком то плане "аргументы"
+                            num = int(word.split('<word_')[1].split('>')[0])
+                            try:
+                                word = answer[i].replace(f'<word_{num}>', message.split()[num])
+                                answer[i] = answer[i].replace(f'<word_{num}>', message.split()[num])
+                            except Exception:
+                                word = answer[i].replace(f'<word_{num}>', '')
+                                answer[i] = answer[i].replace(f'<word_{num}>', '')
                     else:
-                        continue
+                        answer = ' '.join(answer)
+                        # тут обрабатываются мои "спецсимволы"
+                        answer = answer.replace('<br_>', '\n').replace('<+>', ' ').replace(' <-> ', '').replace('<-> ',
+                                                                                                                '').replace(
+                            ' <->', '')
+                        if answer:
+                            send_message(answer, from_chat)
+                        else:
+                            continue
+        except Exception:
+            pass
