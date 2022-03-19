@@ -288,6 +288,8 @@ loc2 - второй предложный (висит в шкафу)
                 answer = cmds[message.split()[0]].copy()
                 text = ' '.join(answer)
 
+                att = []
+                keyboard = VkKeyboard(inline=True)
                 users = list()
                 name = ''
                 last_name = ''
@@ -299,7 +301,8 @@ loc2 - второй предложный (висит в шкафу)
                 if '<sender_last_name>' in text:
                     last_name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
                         'last_name']
-                att = []
+                if '<button_' in text:
+                    keyboard = VkKeyboard(inline=True)
                 for i, word in enumerate(answer):
                     # чередование слов в зависимости от пола
                     if '||' in word:
@@ -379,15 +382,41 @@ loc2 - второй предложный (висит в шкафу)
                         answer[i] = answer[i].replace(f'<word_{num}>', '')
                 else:
                     answer = ' '.join(answer)
+
                     # тут обрабатываются мои "спецсимволы"
                     answer = answer.replace('<br_>', '\n').replace('<+>', ' ').replace(' <-> ', '').replace('<-> ',
                                                                                                             '').replace(
                         ' <->', '')
-                    if answer and not att:
-                        send_message(answer, from_chat)
-                    elif answer or att:
-                        send_message(answer, from_chat, attachment=att)
+                    # Работа с клавиатурой
+                    tot = 0
+                    while '<button_' in answer:
+                        tot += 1
+                        if tot > 20:
+                            break
+                        if answer.find('<button_') < answer.find('<add_line>') or answer.find('<add_line>') == -1:
+                            if answer.find('<button_') == answer.find('<button_link_'):
+                                text, *link = answer.split('<button_link_')[1].split('>')[0].split('_')
+                                link = '_'.join(link)
+                                keyboard.add_openlink_button(text, link)
+                                answer = answer.replace(f'<button_link_{text}_{link}>', '')
+                            else:
+                                text, color = answer.split('<button_')[1].split('>')[0].split('_')
+                                if color == 'positive':
+                                    keyboard.add_button(text, VkKeyboardColor.POSITIVE)
+                                elif color == 'primary':
+                                    keyboard.add_button(text, VkKeyboardColor.PRIMARY)
+                                elif color == 'negative':
+                                    keyboard.add_button(text, VkKeyboardColor.NEGATIVE)
+                                elif color == 'secondary':
+                                    keyboard.add_button(text, VkKeyboardColor.SECONDARY)
+                                answer = answer.replace(f'<button_{text}_{color}>', '')
+                        else:
+                            keyboard.add_line()
+                            answer = answer.replace(f'<add_line>', '')
+
+                    if answer or att or keyboard:
+                        send_message(answer, from_chat, keyboard=keyboard, attachment=att)
                     else:
                         continue
-        except Exception:
-            pass
+        except Exception as err:
+            print(err, message)
