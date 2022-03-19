@@ -6,6 +6,8 @@ from vk_api.utils import get_random_id
 import json
 import random
 from utils import *
+import pymorphy2
+from transliterate import translit
 
 # очень много вкусных импортов
 
@@ -13,9 +15,11 @@ vk_session = VkApi(token=token)
 longpoll = VkBotLongPoll(vk_session, group_id=group_id)
 vk = vk_session.get_api()
 vktype = VkBotEventType
+morph = pymorphy2.MorphAnalyzer()
 # инициализация базовых переменных
 
 cutid = lambda x: int(x.split('|')[0][3:])  # вырезает id из тега
+cutname = lambda x: x.split('|')[1][:-1]  # вырезает имя из тега
 
 
 def send_message(messag, sender, keyboard=None, attachment=None):  # оптимальная функция для отправки сообщений
@@ -117,6 +121,24 @@ for event in longpoll.listen():
 <-> - этот спецсимвол наоборот убирает следующий пробел. Нужно если вам надо слитный текст.
 <sender_last_name> - фамилия пользователя.
 <word_номер> - любое слово из сообщение.
+<sender> - отправитель (в формате тега)
+<random_user> - выбирает случайного пользователя из беседы. НУЖНЫ ПРАВА АДМИНИСТРАТОРА!
+<random_user_id> - выбирает случайного пользователя из беседы и дает его id! НУЖНЫ ПРАВА АДМИНИСТРАТОРА!
+
+Также при вырезании слов им можно дать падеж.
+Пример: <word_2_datv> - второе слово в дательном падеже
+
+Список падежей:
+nomn - именительный
+gent - родительный
+datv - дательный
+accs - винительный
+ablt - творительный
+loct - предложный
+voct - звательный
+gen2 - второй родительный (Стакан ядУ) - вот это часто используется. Например при действии по типу "Ударить".
+acc2 - второй винительный (записался в солдатЫ)
+loc2 - второй предложный (висит в шкафу)
                 
 Пример команды:
 !добавить !крос @id<sender_id>(<sender_name>) очень красивый||красивая''', from_chat)
@@ -144,14 +166,19 @@ for event in longpoll.listen():
                         name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
                         name2 = vk.users.get(user_ids=(partner_id), fields=['first_name_dat'])[0]['first_name_dat']
                         sex = vk.users.get(user_ids=(sender), fields=['sex'])[0]['sex']
+                        keyboard = VkKeyboard(inline=True)
+                        keyboard.add_button(f'!принять предложение @id{sender}', color=VkKeyboardColor.POSITIVE)
+                        keyboard.add_button(f'!отказаться от предложения @id{sender}', color=VkKeyboardColor.NEGATIVE)
+                        keyboard.add_line()
+                        keyboard.add_button(f'!отменить предложение @id{partner_id}', color=VkKeyboardColor.PRIMARY)
                         if sex == 1:
                             send_message(
                                 f'@id{sender}({name1}) предлагает @id{partner_id}({name2}) взять ее в жены!\nЧтобы согласиться введите: "!принять предложение @id{sender} "\nЧтобы отказаться введите: "!отказаться от предложения @id{sender}"',
-                                from_chat)
+                                from_chat, keyboard=keyboard)
                         else:
                             send_message(
                                 f'@id{sender}({name1}) предлагает @id{partner_id}({name2}) выйти за него замуж!\nЧтобы согласиться введите: "!принять предложение @id{sender} "\nЧтобы отказаться введите: "!отказаться от предложения @id{sender}"',
-                                from_chat)
+                                from_chat, keyboard=keyboard)
                     continue
                 elif sender in marrys_wait[from_chat].values():
                     send_message('Этот человек уже сделал вам предложение.', from_chat)
@@ -210,7 +237,7 @@ for event in longpoll.listen():
                 else:
                     send_message(f'Сорян но @id{sender}(ты) никому не нужен.', from_chat)
             if event.from_chat and test_message.startswith('!добавить') and len(
-                    message) < 201:  # а тут мы добавляем команды
+                    message) < 5001:  # а тут мы добавляем команды
                 message = message.replace('\n',
                                           '<br_>')
                 # так как я ленивая жопа, то вместо попыток сохранить символ тупо сделал свой
@@ -248,60 +275,95 @@ for event in longpoll.listen():
                         peers_commands[from_chat] = cmds
                 else:
                     cmds = peers_commands[from_chat]
-                if cmds.get(message.split()[0]):
-                    if event.message.get('reply_message'):
-                        # если это пересланое сообщение то автоматически подставляем автора
-                        name = vk.users.get(user_ids=(event.message.get('reply_message')['from_id']),
-                                            fields=['first_name'])[0]['first_name']
-                        message += ' @id' + str(event.message.get('reply_message')['from_id']) + '(' + \
-                                   name + ')'
-                    answer = cmds[message.split()[0]].copy()
-                    for i, word in enumerate(answer):
-                        # чередование слов в зависимости от пола
-                        if '||' in word:
-                            if people_sex[sender] == 1:
-                                answer[i] = word.split('||')[1]
-                            elif people_sex[sender] == 0 or people_sex[sender] == 2:
-                                answer[i] = word.split('||')[0]
-                        if '&&' in word:
-                            # пресвятой рандом
-                            words = word.split('&&')
-                            if len(words) == 2 and words[0].isdigit() and words[1].isdigit():
-                                answer[i] = str(random.randint(int(words[0]), int(words[1])))
-                            else:
-                                answer[i] = random.choice(words)
-                        # тупо переменные
-                        if '<sender_id>' in word:
-                            answer[i] = answer[i].replace('<sender_id>', str(sender))
-                        if '<sender_name>' in word:
-                            name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
-                                'first_name']
-                            answer[i] = answer[i].replace('<sender_name>', name)
-                        if '<sender_last_name>' in word:
-                            name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
-                                'last_name']
-                            answer[i] = answer[i].replace('<sender_last_name>', name)
-                        if '<text_message>' in word:
-                            answer[i] = answer[i].replace('<text_message>',
-                                                          message.replace(message.split()[0] + ' ', ''))
-                        while '<word_' in word:
-                            # а это в каком то плане "аргументы"
-                            num = int(word.split('<word_')[1].split('>')[0])
-                            try:
-                                word = answer[i].replace(f'<word_{num}>', message.split()[num])
-                                answer[i] = answer[i].replace(f'<word_{num}>', message.split()[num])
-                            except Exception:
-                                word = answer[i].replace(f'<word_{num}>', '')
-                                answer[i] = answer[i].replace(f'<word_{num}>', '')
-                    else:
-                        answer = ' '.join(answer)
-                        # тут обрабатываются мои "спецсимволы"
-                        answer = answer.replace('<br_>', '\n').replace('<+>', ' ').replace(' <-> ', '').replace('<-> ',
-                                                                                                                '').replace(
-                            ' <->', '')
-                        if answer:
-                            send_message(answer, from_chat)
+            if cmds.get(message.split()[0]):
+                if event.message.get('reply_message'):
+                    # если это пересланое сообщение то автоматически подставляем автора
+                    name = vk.users.get(user_ids=(event.message.get('reply_message')['from_id']),
+                                        fields=['first_name'])[0]['first_name']
+                    message += ' @id' + str(event.message.get('reply_message')['from_id']) + '(' + \
+                               name + ')'
+                answer = cmds[message.split()[0]].copy()
+                for i, word in enumerate(answer):
+                    # чередование слов в зависимости от пола
+                    if '||' in word:
+                        if people_sex[sender] == 1:
+                            answer[i] = word.split('||')[1]
+                        elif people_sex[sender] == 0 or people_sex[sender] == 2:
+                            answer[i] = word.split('||')[0]
+                    if '&&' in word:
+                        # пресвятой рандом
+                        words = word.split('&&')
+                        if len(words) == 2 and words[0].isdigit() and words[1].isdigit():
+                            answer[i] = str(random.randint(int(words[0]), int(words[1])))
                         else:
-                            continue
+                            answer[i] = random.choice(words)
+                    # тупо переменные
+                    if '<sender_id>' in word:
+                        answer[i] = answer[i].replace('<sender_id>', str(sender))
+                    if '<sender_name>' in word:
+                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                            'first_name']
+                        answer[i] = answer[i].replace('<sender_name>', name)
+                    if '<sender_last_name>' in word:
+                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                            'last_name']
+                        answer[i] = answer[i].replace('<sender_last_name>', name)
+                    if '<text_message>' in word:
+                        answer[i] = answer[i].replace('<text_message>',
+                                                      message.replace(message.split()[0] + ' ', ''))
+                    if '<sender>' in word:
+                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                            'first_name']
+                        answer[i] = answer[i].replace('<sender>', f'@id{sender}({name})')
+                    if '<random_user>' in word:
+                        users = vk.messages.getConversationMembers(peer_id=from_chat)
+                        user = random.choice(users['profiles'])
+                        answer[i] = answer[i].replace('<random_user>', f'@id{user["id"]}({user["first_name"]})')
+                    if '<random_user_id>' in word:
+                        users = vk.messages.getConversationMembers(peer_id=from_chat)
+                        user = random.choice(users['profiles'])
+                        answer[i] = answer[i].replace('<random_user>', str(user['id']))
+                    tot = 0
+                    while '<word_' in word:
+                        tot += 1
+                        if tot > 10:
+                            break
+                        # а это в каком то плане "аргументы"
+                        num = word.split('<word_')[1].split('>')[0]
+                        try:
+                            if len(num.split('_')) == 2:
+                                spr = num.split('_')[1]
+                                num = num.split('_')[0]
+                                new_word = message.split()[int(num)]
+                                if new_word[:3] == '[id' and new_word[-1] == ']' and new_word.count('|') == 1:
+                                    nname = cutname(new_word)
+                                    nname = translit(nname, 'ru')
+                                    iid = cutid(new_word)
+                                    aboba = morph.parse(nname)[0]
+                                    x = aboba.inflect({spr})
+                                    word = answer[i].replace(f'<word_{num}_{spr}>', f'@id{iid}({x.word.capitalize()})')
+                                    answer[i] = answer[i].replace(f'<word_{num}_{spr}>',
+                                                                  f'@id{iid}({x.word.capitalize()})')
+                                else:
+                                    aboba = morph.parse(translit(new_word, 'ru'))[0]
+                                    x = aboba.inflect({spr})
+                                    word = answer[i].replace(f'<word_{num}_{spr}>', x.word)
+                                    answer[i] = answer[i].replace(f'<word_{num}_{spr}>', x.word)
+                            else:
+                                word = answer[i].replace(f'<word_{num}>', message.split()[int(num)])
+                                answer[i] = answer[i].replace(f'<word_{num}>', message.split()[int(num)])
+                        except Exception:
+                            word = answer[i].replace(f'<word_{num}>', '')
+                        answer[i] = answer[i].replace(f'<word_{num}>', '')
+                else:
+                    answer = ' '.join(answer)
+                    # тут обрабатываются мои "спецсимволы"
+                    answer = answer.replace('<br_>', '\n').replace('<+>', ' ').replace(' <-> ', '').replace('<-> ',
+                                                                                                            '').replace(
+                        ' <->', '')
+                    if answer:
+                        send_message(answer, from_chat)
+                    else:
+                        continue
         except Exception:
             pass
