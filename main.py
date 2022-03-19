@@ -67,9 +67,12 @@ for event in longpoll.listen():
         sender = event.message['from_id']
         from_chat = event.message['peer_id']
         # делаем вспомогательные переменные
-        if sender not in people_sex.keys():
-            sex = vk.users.get(user_ids=(event.message['from_id']), fields=['sex'])[0]['sex']
-            people_sex[sender] = sex
+        try:
+            if sender not in people_sex.keys():
+                sex = vk.users.get(user_ids=(event.message['from_id']), fields=['sex'])[0]['sex']
+                people_sex[sender] = sex
+        except Exception:
+            pass
         # вноска людей в словарик полов
         if event.from_chat and from_chat not in peers:  # если беседы нет то она вносится в список
             peers.append(from_chat)
@@ -283,6 +286,20 @@ loc2 - второй предложный (висит в шкафу)
                     message += ' @id' + str(event.message.get('reply_message')['from_id']) + '(' + \
                                name + ')'
                 answer = cmds[message.split()[0]].copy()
+                text = ' '.join(answer)
+
+                users = list()
+                name = ''
+                last_name = ''
+                if '<random_user' in text:
+                    users = vk.messages.getConversationMembers(peer_id=from_chat)
+                if '<sender_name>' in text or '<sender>' in text:
+                    name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                        'first_name']
+                if '<sender_last_name>' in text:
+                    last_name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
+                        'last_name']
+                att = []
                 for i, word in enumerate(answer):
                     # чередование слов в зависимости от пола
                     if '||' in word:
@@ -297,32 +314,36 @@ loc2 - второй предложный (висит в шкафу)
                             answer[i] = str(random.randint(int(words[0]), int(words[1])))
                         else:
                             answer[i] = random.choice(words)
+                            word = random.choice(words)
                     # тупо переменные
                     if '<sender_id>' in word:
                         answer[i] = answer[i].replace('<sender_id>', str(sender))
                     if '<sender_name>' in word:
-                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
-                            'first_name']
                         answer[i] = answer[i].replace('<sender_name>', name)
                     if '<sender_last_name>' in word:
-                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
-                            'last_name']
-                        answer[i] = answer[i].replace('<sender_last_name>', name)
+                        answer[i] = answer[i].replace('<sender_last_name>', last_name)
                     if '<text_message>' in word:
                         answer[i] = answer[i].replace('<text_message>',
                                                       message.replace(message.split()[0] + ' ', ''))
                     if '<sender>' in word:
-                        name = vk.users.get(user_ids=(event.message['from_id']), fields=['first_name'])[0][
-                            'first_name']
                         answer[i] = answer[i].replace('<sender>', f'@id{sender}({name})')
                     if '<random_user>' in word:
-                        users = vk.messages.getConversationMembers(peer_id=from_chat)
                         user = random.choice(users['profiles'])
+                        users['profiles'].remove(user)
                         answer[i] = answer[i].replace('<random_user>', f'@id{user["id"]}({user["first_name"]})')
                     if '<random_user_id>' in word:
-                        users = vk.messages.getConversationMembers(peer_id=from_chat)
                         user = random.choice(users['profiles'])
+                        users['profiles'].remove(user)
                         answer[i] = answer[i].replace('<random_user>', str(user['id']))
+                    tot = 0
+                    while '<att_' in word:
+                        tot += 1
+                        if tot > 10:
+                            break
+                        photo_id = word.split('<att_')[1].split('>')[0]
+                        att.append(photo_id)
+                        word = word.replace(f'<att_{photo_id}>', '')
+                        answer[i] = word
                     tot = 0
                     while '<word_' in word:
                         tot += 1
@@ -338,6 +359,7 @@ loc2 - второй предложный (висит в шкафу)
                                 if new_word[:3] == '[id' and new_word[-1] == ']' and new_word.count('|') == 1:
                                     nname = cutname(new_word)
                                     nname = translit(nname, 'ru')
+                                    nname = nname.replace('x', 'кс')
                                     iid = cutid(new_word)
                                     aboba = morph.parse(nname)[0]
                                     x = aboba.inflect({spr})
@@ -361,8 +383,10 @@ loc2 - второй предложный (висит в шкафу)
                     answer = answer.replace('<br_>', '\n').replace('<+>', ' ').replace(' <-> ', '').replace('<-> ',
                                                                                                             '').replace(
                         ' <->', '')
-                    if answer:
+                    if answer and not att:
                         send_message(answer, from_chat)
+                    elif answer or att:
+                        send_message(answer, from_chat, attachment=att)
                     else:
                         continue
         except Exception:
