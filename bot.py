@@ -8,6 +8,7 @@ import random
 from utils import *
 import pymorphy2
 from transliterate import translit
+import datetime
 
 # очень много вкусных импортов
 
@@ -57,13 +58,14 @@ def main():
     marrys_wait = dict()
     static_commands = ['!гайд', '!переменные', '!команды', '!свадьбы', '!развод', '!добавить']
 
-    print('Бот запущен!')
+    print('Бот запущен! Bot is online')
     for event in longpoll.listen():
         if event.type == VkBotEventType.MESSAGE_NEW and (event.from_user or event.from_chat) and event.message['text'] and \
                 event.message['from_id'] > 0:  # если это входящее, где угодно, с текстов и не от группы то реагируем
             message = event.message['text']
             test_message = event.message['text'].lower()
             if test_message.startswith('[club211218245|@bot_rp_vk] '):
+                message = message.replace('[club211218245|@bot_rp_vk] ', '', 1)
                 test_message = test_message.replace('[club211218245|@bot_rp_vk] ', '', 1)
             sender = event.message['from_id']
             from_chat = event.message['peer_id']
@@ -146,6 +148,59 @@ loc2 - второй предложный (висит в шкафу)
                     
 Пример команды:
 !добавить !крос @id<sender_id>(<sender_name>) очень красивый||красивая''', from_chat)
+                if test_message == '!месяцы':
+                    send_message('''Месяца и их номера
+Январь - 01 - 31 день
+Февраль - 02 - 28 (29) дней
+Март - 03 - 31 день
+Апрель - 04 - 30 дней
+Май - 05 - 31 лень
+Июнь - 06 - 30 дней
+Июль - 07 - 31 день
+Август - 08 - 31 день
+Сентябрь - 09 - 30 дней
+Октябрь - 10 - 31 день
+Ноябрь - 11 - 30 дней
+Декабрь - 12 - 31 день''', from_chat)
+                if test_message.startswith('!др добавить'):
+                    a, b, date, *users = test_message.split()
+                    del a, b
+                    with open('datas/birthdays.json') as f:
+                        brd = json.load(f)
+                    if not brd.get(date):
+                        brd[date] = list()
+                    brd[date].extend(users)
+                    with open('datas/birthdays.json', 'w') as f:
+                        json.dump(brd, f, indent=4)
+                    send_message('Успешно внесено!', from_chat)
+                elif test_message.startswith('!др удалить'):
+                    a, b, date, *users = test_message.split()
+                    del a, b
+                    with open('datas/birthdays.json') as f:
+                        brd = json.load(f)
+                    if not brd.get(date):
+                        brd[date] = list()
+                    for x in users:
+                        brd[date].remove(x)
+                    with open('datas/birthdays.json', 'w') as f:
+                        json.dump(brd, f, indent=4)
+                    send_message('Успешно удалено!', from_chat)
+                elif test_message.startswith('!др'):
+                    date = str(datetime.date.today()).split('-')
+                    date_str = f'{date[2]}.{date[1]}'
+                    with open('datas/birthdays.json') as f:
+                        brd = json.load(f)
+                    if brd.get(date_str):
+                        users = brd.get(date_str)
+                        message_2 = 'Сегодня дни рождения у:\n'
+                        for u in users:
+                            message_2 += u + '\n'
+                        send_message(message_2, from_chat)
+                    else:
+                        send_message('Сегодня никто не родился. Повезло', from_chat)
+                ####################
+                ####################
+                ####################
                 if test_message == '!свадьбы':
                     send_message('''Чтобы сделать предложение введите: !сделать предложение <человек>
 Чтобы отменить предложение введите: !отказаться от предложения <человек>
@@ -240,8 +295,26 @@ loc2 - второй предложный (висит в шкафу)
                         send_message(message, from_chat)
                     else:
                         send_message(f'Сорян но @id{sender}(ты) никому не нужен.', from_chat)
-                if event.from_chat and test_message.startswith('!добавить') and len(
-                        message) < 5001:  # а тут мы добавляем команды
+                #########################
+                #########################
+                #########################
+                if event.from_chat and test_message.startswith('!добавить'):  # а тут мы добавляем команды
+                    users = []
+                    try:
+                        users = vk.messages.getConversationMembers(peer_id=from_chat)['items']
+                    except Exception:
+                        send_message('Для работы бота ему нужны права администратора в беседе!', from_chat)
+                        continue
+                    user = dict()
+                    for u in users:
+                        if u['member_id'] == sender:
+                            user = u
+                    if not user.get('is_admin'):
+                        send_message('Вам необходимо быть администратором беседы чтобы создавать команды', from_chat)
+                        continue
+                    if len(message) > 1000:
+                        send_message('Слишком большая команда (> 1000 символов)', from_chat)
+                        continue
                     message = message.replace('\n',
                                               '<br_>')
                     # так как я ленивая жопа, то вместо попыток сохранить символ тупо сделал свой
@@ -250,6 +323,10 @@ loc2 - второй предложный (висит в шкафу)
                     answer = args[1:]  # нарезочка
                     with open('peers_commands/' + str(from_chat) + '.json') as f:
                         cmds = json.load(f)
+                        if len(cmds.keys()) >= 30:
+                            send_message('В вашей беседе уже 30 команд! Пожалуйста удалите лишние команды или'
+                                         ' свяжитесь с администратором бота', from_chat)
+                            continue
                         if command in cmds.keys() or command in static_commands:
                             send_message('Упс! Такая команда уже есть!', from_chat)
                             continue
@@ -259,6 +336,8 @@ loc2 - второй предложный (висит в шкафу)
                         json.dump(cmds, f)  # вносим команду: слово которое реагирует и ответ разделенный на пробелы.
                         # все это хранится в json файлах в папке peers_commands
                     send_message('Ваша команда успешно добавлена!', from_chat)
+                ##################
+                ##################
                 if event.from_chat and test_message.startswith('!удалить'):  # если кто то накосячил можно и удалить команду
                     args = message.split()[1:]
                     command = args[0]
@@ -284,8 +363,8 @@ loc2 - второй предложный (висит в шкафу)
                         # если это пересланое сообщение то автоматически подставляем автора
                         name = vk.users.get(user_ids=(event.message.get('reply_message')['from_id']),
                                             fields=['first_name'])[0]['first_name']
-                        message += ' @id' + str(event.message.get('reply_message')['from_id']) + '(' + \
-                                   name + ')'
+                        message += ' [id' + str(event.message.get('reply_message')['from_id']) + '|' + \
+                                   name + ']'
                     answer = cmds[message.split()[0]].copy()
                     text = ' '.join(answer)
 
@@ -331,15 +410,18 @@ loc2 - второй предложный (висит в шкафу)
                                                           message.replace(message.split()[0] + ' ', ''))
                         if '<sender>' in word:
                             answer[i] = answer[i].replace('<sender>', f'@id{sender}({name})')
+                        if '<peer_id>' in word:
+                            answer[i] = answer[i].replace('<peer_id>', str(from_chat))
                         while '<random_user>' in word:
                             user = random.choice(users['profiles'])
                             users['profiles'].remove(user)
                             answer[i] = answer[i].replace('<random_user>', f'@id{user["id"]}({user["first_name"]})', 1)
                             word = word.replace('<random_user>', f'@id{user["id"]}({user["first_name"]})', 1)
-                        if '<random_user_id>' in word:
+                        while '<random_user_id>' in word:
                             user = random.choice(users['profiles'])
                             users['profiles'].remove(user)
-                            answer[i] = answer[i].replace('<random_user>', str(user['id']))
+                            answer[i] = answer[i].replace('<random_user_id>', str(user['id']), 1)
+                            word = word.replace('<random_user_id>', str(user['id']), 1)
                         tot = 0
                         while '<att_' in word:
                             tot += 1
