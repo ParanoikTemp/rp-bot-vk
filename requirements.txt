@@ -1,0 +1,4 @@
+pymorphy2==0.9.1
+pymorphy2-dicts-ru==2.4.417127.4579844
+transliterate==1.10.2
+vk-api==11.9.1
