@@ -56,7 +56,11 @@ def main():
     with open('datas/marry.json', 'r') as f:
         marrys_list = json.load(f)
     marrys_wait = dict()
-    static_commands = ['!гайд', '!переменные', '!команды', '!свадьбы', '!развод', '!добавить']
+    with open('datas/childrens.json', 'r') as f:
+        childrens_list = json.load(f)
+    childrens_wait = dict()
+    static_commands = ['!гайд', '!переменные', '!команды', '!свадьбы', '!развод', '!добавить', '!др', '!усыновить',
+                       '!удочерить']
 
     print('Бот запущен! Bot is online')
     for event in longpoll.listen():
@@ -286,18 +290,139 @@ loc2 - второй предложный (висит в шкафу)
                                      from_chat)
                     else:
                         send_message('Вы не женаты на этом человеке', from_chat)
-                if event.from_chat and test_message.startswith('!браки'):
-                    if str(sender) in marrys_list[str(from_chat)] and marrys_list[str(from_chat)][str(sender)]:
-                        message = f'@id{sender}(Ваши) партнеры:\n'
+                if event.from_chat and test_message.startswith('!семья'):
+                    if (str(sender) in marrys_list[str(from_chat)] and marrys_list[str(from_chat)][str(sender)]) or \
+                            (str(sender) in childrens_list[str(from_chat)] and childrens_list[str(from_chat)][str(sender)]):
+                        message = f'Список ваших родственников:\nВаши партнеры:\n'
                         for i in marrys_list[str(from_chat)][str(sender)]:
                             name = vk.users.get(user_ids=(i), fields=['first_name'])[0]['first_name']
                             message += f'@id{i}({name})\n'
+                        if not marrys_list[str(from_chat)][str(sender)]:
+                            message += 'Вы одинокий человек.\n'
+                        message += f'\nВаши родители:\n'
+                        t = 0
+                        for i in childrens_list[str(from_chat)][str(sender)]:
+                            if i[1] == 1:
+                                t += 1
+                                name = vk.users.get(user_ids=(i[0]), fields=['first_name'])[0]['first_name']
+                                message += f'@id{i[0]}({name})\n'
+                        if not t:
+                            message += 'В канаве (осуждаю)\n'
+                        message += f'\nВаши дети:\n'
+                        t = 0
+                        for i in childrens_list[str(from_chat)][str(sender)]:
+                            if i[1] == 0:
+                                t += 1
+                                name = vk.users.get(user_ids=(i[0]), fields=['first_name'])[0]['first_name']
+                                message += f'@id{i[0]}({name})\n'
+                        if not t:
+                            message += 'Не нарожали пока.'
                         send_message(message, from_chat)
                     else:
                         send_message(f'Сорян но @id{sender}(ты) никому не нужен.', from_chat)
                 #########################
                 #########################
                 #########################
+                if event.from_chat and str(from_chat) not in childrens_list.keys():
+                    childrens_list[str(from_chat)] = {}
+                if event.from_chat and from_chat not in childrens_wait.keys():
+                    childrens_wait[from_chat] = {}
+                if (test_message.startswith('!усыновить') or test_message.startswith('!удочерить')) and len(
+                        test_message.split()) == 2:
+                    partner_id = cutid(test_message.split()[1])
+                    if sender not in childrens_wait[from_chat].keys() and sender not in childrens_wait[
+                        from_chat].values() and partner_id != sender:
+                        if str(sender) not in childrens_list[str(from_chat)]:
+                            childrens_list[str(from_chat)][str(sender)] = list()
+                        if str(partner_id) not in childrens_list[str(from_chat)]:
+                            childrens_list[str(from_chat)][str(partner_id)] = list()
+                        if str(sender) in childrens_list[str(from_chat)][str(partner_id)]:
+                            send_message('Огорчу вас, но вы уже родитель', from_chat)
+                        else:
+                            childrens_wait[from_chat][sender] = partner_id
+                            name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                            name2 = vk.users.get(user_ids=(partner_id), fields=['first_name_dat'])[0][
+                                'first_name_dat']
+                            sex2 = vk.users.get(user_ids=(partner_id), fields=['sex'])[0]['sex']
+                            keyboard = VkKeyboard(inline=True)
+                            keyboard.add_button(f'!стать ребенком @id{sender}',
+                                                color=VkKeyboardColor.POSITIVE)
+                            if sex2 == 1:
+                                keyboard.add_button(f'!отказаться от удочерения @id{sender}',
+                                                    color=VkKeyboardColor.NEGATIVE)
+                            else:
+                                keyboard.add_button(f'!отказаться от усыновления @id{sender}',
+                                                    color=VkKeyboardColor.NEGATIVE)
+                            keyboard.add_line()
+                            if sex2 == 1:
+                                keyboard.add_button(f'!отменить удочерение @id{partner_id}',
+                                                    color=VkKeyboardColor.PRIMARY)
+                            else:
+                                keyboard.add_button(f'!отменить усыновление @id{partner_id}',
+                                                    color=VkKeyboardColor.PRIMARY)
+                            if sex2 == 1:
+                                send_message(
+                                    f'@id{sender}({name1}) предлагает @id{partner_id}({name2}) стать дочерью!\nЧтобы согласиться введите: "!стать ребенком @id{sender}"\nЧтобы отказаться введите: "!отказаться от удочерения @id{sender}"',
+                                    from_chat, keyboard=keyboard)
+                            else:
+                                send_message(
+                                    f'@id{sender}({name1}) предлагает @id{partner_id}({name2}) стать сыном!\nЧтобы согласиться введите: "!стать ребенком @id{sender}"\nЧтобы отказаться введите: "!отказаться от усыновления @id{sender}"',
+                                    from_chat, keyboard=keyboard)
+                        continue
+                    elif sender in childrens_wait[from_chat].values():
+                        send_message('Этот человек уже предлагает это вам', from_chat)
+                    elif partner_id == sender:
+                        send_message('Ты еблан?', from_chat)
+                    else:
+                        send_message('Блин, ну куда ты спешишь емае...', from_chat)
+                if test_message.startswith('!отменить удочерение') or test_message.startswith('!отменить усыновление'):
+                    if sender in childrens_wait[from_chat].keys():
+                        del childrens_wait[from_chat][sender]
+                        send_message('Вы отменили ваше предложение', from_chat)
+                if test_message.startswith('!стать ребенком') and len(test_message.split()) == 3:
+                    partner_id = cutid(test_message.split()[2])
+                    if childrens_wait[from_chat].get(partner_id) and childrens_wait[from_chat][partner_id] == sender:
+                        del childrens_wait[from_chat][partner_id]
+                        childrens_list[str(from_chat)][str(partner_id)].append([sender, 0])
+                        childrens_list[str(from_chat)][str(sender)].append([partner_id, 1])
+                        with open('datas/childrens.json', 'w') as f:
+                            json.dump(childrens_list, f)
+                        name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                        name2 = vk.users.get(user_ids=(partner_id), fields=['first_name'])[0]['first_name']
+                        send_message(f'В этот день @id{partner_id}({name2}) и @id{sender}({name1}) '
+                                     f'стали семьей!\nПоздравим счастливчиков!',
+                                     from_chat)
+                    else:
+                        send_message('К сожалению, ты никому не нужен...', from_chat)
+                if (test_message.startswith('!отказаться от удочерения') or test_message.startswith(
+                        '!отказаться от усыновления')) and len(test_message.split()) == 4:
+                    partner_id = cutid(test_message.split()[3])
+                    if childrens_wait[from_chat].get(partner_id) and childrens_wait[from_chat][partner_id] == sender:
+                        del childrens_wait[from_chat][partner_id]
+                        name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                        name2 = vk.users.get(user_ids=(partner_id), fields=['first_name'])[0]['first_name']
+                        send_message(f'Извини @id{partner_id}({name2}), но @id{sender}({name1}) '
+                                     f'отказался стать твоим ребенком. Херовый ты человек судя по всему', from_chat)
+                    else:
+                        send_message('К сожалению, ты никому не нужен...', from_chat)
+                if test_message.startswith('!выгнать') and len(test_message.split()) == 2:
+                    partner_id = cutid(test_message.split()[1])
+                    if childrens_list[str(from_chat)].get(str(sender)) and [partner_id, 0] in \
+                            childrens_list[str(from_chat)][str(sender)]:
+                        childrens_list[str(from_chat)][str(sender)].remove([partner_id, 0])
+                        childrens_list[str(from_chat)][str(partner_id)].remove([sender, 1])
+                        with open('datas/childrens.json', 'w') as f:
+                            json.dump(childrens_list, f)
+                        name1 = vk.users.get(user_ids=(sender), fields=['first_name'])[0]['first_name']
+                        name2 = vk.users.get(user_ids=(partner_id), fields=['first_name'])[0]['first_name']
+                        send_message(
+                            f'Печальные вести! @id{partner_id}({name2}) и @id{sender}({name1}) больше не одна семья! :C',
+                            from_chat)
+                    else:
+                        send_message('Вы не являетесь родителем этого человека', from_chat)
+                ##########################
+                ##########################
+                ##########################
                 if event.from_chat and test_message.startswith('!добавить'):  # а тут мы добавляем команды
                     users = []
                     try:
@@ -509,4 +634,4 @@ while True:
     try:
         main()
     except Exception:
-        pass
+       pass
